@@ -1,5 +1,6 @@
 import unittest
 
+
 class ValidationTest(unittest.TestCase):
     '''Tests the validation functions'''
 

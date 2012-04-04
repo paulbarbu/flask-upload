@@ -3,6 +3,7 @@
 import sqlite3 as db
 import os.path
 
+
 def create_db(name, path):
     '''Creates a SQLite3 database at the specified location(path) with the
     specified name
@@ -30,4 +31,3 @@ def create_db(name, path):
 
 if __name__ == "__main__":
     create_db('upload.db', os.path.abspath('..'))
-

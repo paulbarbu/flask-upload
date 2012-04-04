@@ -1,6 +1,7 @@
 import unittest
 from mock import MagicMock, patch
 
+
 class DatabaseTest(unittest.TestCase):
     '''Tests the database functionality'''
 
@@ -16,7 +17,7 @@ class DatabaseTest(unittest.TestCase):
             self.assertTrue(is_valid_sqlite3('db.db'))
             fh.read.assert_called_with(15)
 
-            fh.read.return_value = 'SQLite format 3 '#notice the space
+            fh.read.return_value = 'SQLite format 3 '  # notice the space
 
             self.assertFalse(is_valid_sqlite3('db.db'))
             fh.read.assert_called_with(15)
