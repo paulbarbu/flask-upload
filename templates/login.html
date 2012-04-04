@@ -1,8 +1,10 @@
-%rebase layout title='Login'
+{% extends 'layout.html' %}
+{% block title %}Log in{% endblock %}
+{% block content %}
 <div>
-%if defined('message') and message:
+{% if message is defined and message %}
     <div class="message">{{message}}</div>
-%else:
+{% else %}
     <form method="post">
         <label for="id-nick">Nickname: </label>
         <input type="text" name="nick" maxlength="50" id="id-nick" tabindex="1" />
@@ -10,16 +12,19 @@
         <label for="id-pass">Password: </label>
         <input type="password" name="password" id="id-pass" tabindex="2" />
         <br />
-        <input type="submit" name="login" value="Log in!" tabindex="3"/>
+        <label for="id-remember">Remember me </label>
+        <input type="checkbox" name="remember" id="id-remember" tabindex="3" />
+        <br />
+        <input type="submit" name="login" value="Log in!" tabindex="4"/>
     </form>
 
-    %if defined('error') and error:
+    {% if error is defined and error %}
         <div class="error">{{error['msg']}} (#{{error['code']}})</div>
-    %end
+    {% endif %}
 
     <p>
     If you don't have an account, you can create one on the <a href="/register">registration page</a>!
     </p>
-%end
+{% endif %}
 </div>
-
+{% endblock %}

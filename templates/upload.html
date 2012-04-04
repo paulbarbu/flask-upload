@@ -1,4 +1,6 @@
-%rebase layout title='Upload'
+{% extends 'layout.html' %}
+{% block title %}Upload{% endblock %}
+{% block content %}
 <div>
 <div>
     <form method="post" enctype="multipart/form-data">
@@ -8,13 +10,14 @@
     </form>
 </div>
 
-%if defined('message') and message:
+{% if message is defined and message %}
     <div>{{message}}</div>
-%end
+{% endif %}
 
-%if defined('error') and error:
+{% if error is defined and error %}
     <div>{{error['msg']}} (#{{error['code']}})</div>
-%end
+{% endif %}
 
 <p><a href="/logout">Log out</a></p>
 </div>
+{% endblock %}
