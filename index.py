@@ -1,9 +1,9 @@
 #! /usr/bin/env python2.7
-
-import bottle
-from bottle import run, debug, get, post, request, template, redirect, install
-from bottle_sqlite import SQLitePlugin
-from beaker.middleware import SessionMiddleware
+# -*- coding: utf-8 -*-
+from flask import Flask, redirect, url_for, render_template, request, session
+from werkzeug import secure_filename
+from simplekv.fs import FilesystemStore
+from flaskext.kvsession import KVSessionExtension
 import re
 import os.path
 import sqlite3
@@ -12,169 +12,172 @@ import logging
 import err
 import const
 
+app = Flask(__name__)
+
+store = FilesystemStore('data')
+sess_ext = KVSessionExtension(store, app)
+
+
 #TODO test this
-@get('/')
+@app.route('/')
 def index():
     if not is_logged_in():
-        redirect('/login')
+        return redirect(url_for('login'))
     else:
-        redirect('/upload')
+        return redirect(url_for('upload'))
+
 
 #TODO test this
-@get('/register')
-def register_view():
-    if not is_logged_in():
-        return template('register')
-    else:
-        redirect('/upload')
-
-#TODO test this
-@post('/register')
-def register_bl(db):
-    '''Attempt to create the user if the provided credentials are fine
-    If the credentials don't match the criteria then show the user some errors
+@app.route('/register', methods=['POST', 'GET'])
+def register():
+    '''On form submit attempt to create the user if the provided credentials
+    are valid
     '''
+
     message = None
     error = None
+    state = {}
 
-    nick = request.forms.nick.lower()
-    email = request.forms.email.lower()
-    password = request.forms.password
+    if request.method == 'POST':
+        nick = request.form['nick'].lower()
+        email = request.form['email'].lower()
+        password = request.form['password']
 
-    state = {
+        state = {
             'nick': nick,
             'email': email
-    }
+        }
 
-    if is_valid_nick(nick):
-        if is_valid_email(email):
-            if is_valid_password(password):
-                import hashlib
+        if is_valid_nick(nick):
+            if is_valid_email(email):
+                if is_valid_password(password):
+                    import hashlib
 
-                password = hashlib.sha1(password).hexdigest()
+                    password = hashlib.sha1(password).hexdigest()
 
-                result = add_user(db, nick, email, password)
+                    result = add_user(nick, email, password)
 
-                if result is True:
-                    message = const.R_SUCCESS
-                    logging.info('{0}({1}) has registered'.format(nick, email))
-                elif result is False:
-                    error = err.DB
+                    if result is True:
+                        message = const.R_SUCCESS
+                        logging.info(
+                                '{0}({1}) has registered'.format(nick, email))
+                    elif result is False:
+                        error = err.DB
+                    else:
+                        error = result
                 else:
-                    error = result
+                    error = err.PASS
             else:
-                error = err.PASS
+                error = err.EMAIL
         else:
-            error = err.EMAIL
+            error = err.NICK
+
+        del password
+
     else:
-        error = err.NICK
+        if is_logged_in():
+            return redirect(url_for('upload'))
 
-    del password
+    return render_template('register.html', message=message, error=error,
+                            state=state)
 
-    return template('register', message=message, error=error, state=state)
 
 #TODO test this
-@get('/login')
-def login_view():
-    if not is_logged_in():
-        return template('login')
-    else:
-        redirect('/upload')
-
-#TODO test this
-@post('/login')
-def login_bl(db):
-    import hashlib
-
-    nick = request.forms.nick.lower()
-    password = hashlib.sha1(request.forms.password).hexdigest()
+@app.route('/login', methods=['POST', 'GET'])
+def login():
+    '''Log the user in after checking his credentials'''
 
     message = {}
     error = None
 
-    uid  = get_user_id(db, nick, password)
+    if request.method == 'POST':
+        import hashlib
 
-    if uid:
-        sess = request.environ.get('beaker.session')
-        sess['uid'] = uid
+        nick = request.form['nick'].lower()
+        password = hashlib.sha1(request.form['password']).hexdigest()
 
-        #TODO add expiration time if the user checks "remember me"
-        #set the cookie_expires and session.timeout time to 30 days
-        #or just overwrite the beaker.session.id cookie writing the same session
-        #id but another expiry date, session.timeout stays 30 days
-        #else, if remember me wasn't checked, cookie_expires: True, and
-        #session.timeout: 1220
+        if 'remember' in request.form:
+            session.permanent = True
 
+        uid = get_user_id(nick, password)
 
-        #try accessing beaker.session.session (dir())
-        #maybe I can set a cookie using the information in sess._headers and
-        #sess._params but then how can I set the session's timeout if I use
-        #files as a backend, in a DB i'd check the creation time + time_delta
+        if uid:
+            session['uid'] = uid
 
-        message = const.L_SUCCESS
-        nick = get_nick_by_id(db, uid)
+            message = const.L_SUCCESS
+            nick = get_nick_by_id(uid)
 
-        if nick:
-            message += ' as ' + nick
-            logging.info('{0} has logged in'.format(nick))
+            if nick:
+                message += ' as ' + nick
+                logging.info('{0} has logged in'.format(nick))
+            else:
+                message += '!'
+                logging.info('Someone has logged in')
+
+        elif uid is None:
+            error = err.NO_USER
         else:
-            message += '!'
-            logging.info('Someone has logged in')
+            error = err.DB
 
-    elif uid is None:
-        error = err.NO_USER
     else:
-        error = err.DB
+        if is_logged_in():
+            return redirect(url_for('upload'))
 
-    return template('login', message=message, error=error)
+    return render_template('login.html', message=message, error=error)
 
-#TODO test this
-@get('/upload')
-def upload(db):
-    if not is_logged_in():
-        redirect('/login')
-    else:
-        return template('upload')
 
 #TODO: test this
-@post('/upload')
-def upload_view(db):
+@app.route('/upload', methods=['POST', 'GET'])
+def upload():
+    '''Upload the file received through POST'''
+
+    sess_ext.cleanup_sessions()
+
     message = None
     error = None
 
-    file_data = request.files.file_data
+    if request.method == 'POST' and is_logged_in():
+        f = request.files['file_data']
+        filename = secure_filename(f.filename)
 
-    if file_data.file:
-        sess = request.environ.get('beaker.session')
-        sess.get_by_id(request.cookies.get('beaker.session.id'))
+        if f:
+            if filename:
+                upload_dir = os.path.join(os.getcwd(), const.UPLOAD_PATH,
+                    get_nick_by_id(session['uid']))
 
-        upload_dir = os.path.join(os.getcwd(), const.UPLOAD_PATH, get_nick_by_id(db, sess['uid']))
+                if not os.path.isdir(upload_dir):
+                    #TODO: check write permissions
+                    os.makedirs(upload_dir)
 
-        if not os.path.isdir(upload_dir):
-            #check write permissions
-            os.makedirs(upload_dir)
+                #TODO: here write permissions should be checked too
+                f.save(os.path.join(upload_dir, filename))
 
-        #here write permissions should be checked too
-        with open(os.path.join(upload_dir, file_data.filename), 'w') as f:
-            f.write(file_data.file.read())
-
-        message = const.U_SUCCESS
+                message = const.U_SUCCESS
+                #TODO: add the upload to the database
+            else:
+                error = err.INVALID_FILENAME
+        else:
+            error = err.NO_FILE
     else:
-        error = err.NO_FILE
+        if is_logged_in():
+            return render_template('upload.html')
+        else:
+            return redirect(url_for('login'))
 
-    return template('upload', message=message, error=error)
+    return render_template('upload.html', message=message, error=error)
 
 
 #TODO: test this
-@get('/logout')
+@app.route('/logout')
 def logout():
     if not is_logged_in():
-        redirect('/login')
+        return redirect(url_for('login'))
     else:
-        sess = request.environ.get('beaker.session')
-        sess.delete()
+        session.destroy()
+        sess_ext.cleanup_sessions()
 
-        return template('logout.tpl')
+        return render_template('logout.html')
+
 
 def is_valid_nick(nick):
     '''A nick is valid when it contains at least one alphanumeric character'''
@@ -183,12 +186,14 @@ def is_valid_nick(nick):
 
     return True
 
+
 def is_valid_password(password):
     '''A password is valid when it contains at least six characters'''
     if len(password) < 6:
         return False
 
     return True
+
 
 def is_valid_email(email):
     '''Validates an email address
@@ -199,15 +204,12 @@ def is_valid_email(email):
 
     return False
 
+
 def is_valid_sqlite3(db):
     '''Validates the SQLite3 database file by checking the first bytes
-    Check section 1.2.1 Magic Header String of http://www.sqlite.org/fileformat.html
+    Check: 1.2.1 Magic Header String of http://www.sqlite.org/fileformat.html
     Note that I'm discarding the last byte, namely: '\0'
     '''
-
-    #TODO: think about this -- commented because of testing purposes
-    #if not os.path.isfile(db):
-        #return False
 
     with open(db, 'r') as f:
         if f.read(15) == 'SQLite format 3':
@@ -217,16 +219,22 @@ def is_valid_sqlite3(db):
 
     return False
 
+
 #TODO test this
-def add_user(db, nick, email, password):
+def add_user(nick, email, password):
     '''Add a user to the database and log the action
     Return True is the user was added succesfully, else Fasle
     '''
+
+    conn = sqlite3.connect(const.DB_FILENAME)
+    db = conn.cursor()
 
     try:
         db.execute('INSERT INTO user(nick, email, password) VALUES(?,?,?)',
             (nick, email, password))
     except sqlite3.IntegrityError as e:
+        conn.close()
+
         if 'email' in str(e):
             return err.UNIQUE_EMAIL
         elif 'nick' in str(e):
@@ -235,82 +243,81 @@ def add_user(db, nick, email, password):
             logging.exception(e)
             return False
     except Exception as e:
+        conn.close()
         logging.exception(e)
         return False
 
+    conn.commit()
+    conn.close()
     return True
 
+
 #TODO test this
-def get_user_id(db, nick, hashed_pass):
+def get_user_id(nick, hashed_pass):
     '''Returns the matching user's ID, else None
     If an unexpected exception is caught False will be returned
     The password passed as argument must be already hashed
     '''
 
+    conn = sqlite3.connect(const.DB_FILENAME)
+    db = conn.cursor()
+
     try:
-        cursor = db.execute('SELECT id FROM user WHERE nick=? AND password=?',
+        db.execute('SELECT id FROM user WHERE nick=? AND password=?',
                 (nick, hashed_pass))
     except Exception as e:
+        conn.close()
         logging.exception(e)
         return False
 
-    rv = cursor.fetchone()
+    rv = db.fetchone()
+
+    conn.close()
 
     if rv is None:
         return None
 
     return int(rv[0])
 
-#TODO test this
-def get_nick_by_id(db, uid):
+
+#TODO test this (check if close was called, etc
+def get_nick_by_id(uid):
     '''Get's the user's nickname by his id
-    If the user doesn't exists None will be returned and in case of errors False
-    will be returned
+    If the user doesn't exists None will be returned
+    In case of errors False will be returned
     '''
 
+    conn = sqlite3.connect(const.DB_FILENAME)
+    db = conn.cursor()
+
     try:
-        cursor = db.execute('SELECT nick FROM user WHERE id=?', (uid,))
+        db.execute('SELECT nick FROM user WHERE id=?', (uid,))
     except Exception as e:
+        conn.close()
         logging.exception(e)
         return False
 
-    rv = cursor.fetchone()
+    rv = db.fetchone()
+
+    conn.close()
 
     if rv is None:
         return None
 
     return str(rv[0])
 
+
+#TODO: test this
 def is_logged_in():
     '''Check whether the user sent a cookie that holds a Beaker created
     session id
     '''
 
-    sess_id = request.cookies.get('beaker.session.id', False)
-
-    if not sess_id:
-        return False
-
-    sess = request.environ.get('beaker.session')
-
-    if 'uid' not in sess:
+    if 'uid' not in session:
         return False
 
     return True
 
-install(SQLitePlugin(dbfile=const.DB_FILENAME))
-
-session_opts = {
-        'session.auto': True,
-        'session.cookie_expires': True,
-        'session.timeout': 1440,
-        'session.type': 'file',
-        'session.data_dir': './data',
-        'session.httponly': True,
-}
-
-app = bottle.app()
-app = SessionMiddleware(app, session_opts)
 
 if __name__ == '__main__':
     logging.basicConfig(filename='logs.log', level=logging.DEBUG,
@@ -321,8 +328,13 @@ if __name__ == '__main__':
         print err.SQLITE_FILE_USER
         logging.critical(err.SQLITE_FILE)
     else:
-        debug(True)
-        run(app=app, host='localhost', port='8080', reloader=True)
+        app.debug = True
+        app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024  # 1 Gb
+        app.secret_key = "your random key here"
 
-    #TODO: add a menu
+        #all these calls should be replaced by a cron job
+        sess_ext.cleanup_sessions()
+
+        app.run()
+
     #TODO: http://pyramid.readthedocs.org/en/1.3-branch/narr/testing.html

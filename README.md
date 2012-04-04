@@ -2,18 +2,19 @@ This is an application that lets users upload files through the web provided
 that they already have an account.
 
 I wrote/I'm writing this application in order to learn python web development
-with bottle.
-
-Also this is the first application I have ever unit-tested.
+with Flask.
 
 Things learned in this project (random order)
 ==============================
-* bottle.py - a micro web framework
-* beaker - middleware for manipulatin sessions
-* how to use a template engine (the one shipped with bottle)
+* Flask - a micro web framework
+* how to use a template engine (Jinja2)
 * the unittest module in stdlib for testing
 * mock - mocking objects and monkey patching for isolation tests
 * SQLite3 database
+* flask-KVSession for managing the sessions on server side
+
+Note: this application is almost the same as bottle-upload, just the framework
+differs
 
 License
 =======

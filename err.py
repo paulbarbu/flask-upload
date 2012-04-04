@@ -42,3 +42,8 @@ NO_FILE = {
     'msg': 'No file selected!',
     'code':  8
 }
+
+INVALID_FILENAME = {
+    'msg': 'Invalid file name, please rename your file!',
+    'code':  9
+}
