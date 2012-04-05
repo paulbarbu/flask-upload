@@ -55,9 +55,13 @@ def register():
 
                     password = hashlib.sha1(password).hexdigest()
 
-                    result = add_user(nick, email, password)
+                    conn = sqlite3.connect(const.DB_FILENAME)
+                    db = conn.cursor()
+
+                    result = add_user(db, nick, email, password)
 
                     if result is True:
+                        db.commit()
                         message = const.R_SUCCESS
                         logging.info(
                                 '{0}({1}) has registered'.format(nick, email))
@@ -65,6 +69,9 @@ def register():
                         error = err.DB
                     else:
                         error = result
+
+                    conn.close()
+
                 else:
                     error = err.PASS
             else:
@@ -99,13 +106,17 @@ def login():
         if 'remember' in request.form:
             session.permanent = True
 
-        uid = get_user_id(nick, password)
+        conn = sqlite3.connect(const.DB_FILENAME)
+        db = conn.cursor()
+
+        uid = get_user_id(db, nick, password)
 
         if uid:
             session['uid'] = uid
 
             message = const.L_SUCCESS
-            nick = get_nick_by_id(uid)
+
+            nick = get_nick_by_id(db, uid)
 
             if nick:
                 message += ' as ' + nick
@@ -118,6 +129,8 @@ def login():
             error = err.NO_USER
         else:
             error = err.DB
+
+        conn.close()
 
     else:
         if is_logged_in():
@@ -137,13 +150,16 @@ def upload():
     error = None
 
     if request.method == 'POST' and is_logged_in():
+        conn = sqlite3.connect(const.DB_FILENAME)
+        db = conn.cursor()
+
         f = request.files['file_data']
         filename = secure_filename(f.filename)
 
         if f:
             if filename:
                 upload_dir = os.path.join(os.getcwd(), const.UPLOAD_PATH,
-                    get_nick_by_id(session['uid']))
+                    get_nick_by_id(db, session['uid']))
 
                 if not os.path.isdir(upload_dir):
                     #TODO: check write permissions
@@ -152,12 +168,15 @@ def upload():
                 #TODO: here write permissions should be checked too
                 f.save(os.path.join(upload_dir, filename))
 
-                message = const.U_SUCCESS
                 #TODO: add the upload to the database
+                message = const.U_SUCCESS
             else:
                 error = err.INVALID_FILENAME
         else:
             error = err.NO_FILE
+
+        conn.close()
+
     else:
         if is_logged_in():
             return render_template('upload.html')
@@ -220,21 +239,15 @@ def is_valid_sqlite3(db):
     return False
 
 
-#TODO test this
-def add_user(nick, email, password):
+def add_user(db, nick, email, password):
     '''Add a user to the database and log the action
     Return True is the user was added succesfully, else Fasle
     '''
-
-    conn = sqlite3.connect(const.DB_FILENAME)
-    db = conn.cursor()
 
     try:
         db.execute('INSERT INTO user(nick, email, password) VALUES(?,?,?)',
             (nick, email, password))
     except sqlite3.IntegrityError as e:
-        conn.close()
-
         if 'email' in str(e):
             return err.UNIQUE_EMAIL
         elif 'nick' in str(e):
@@ -243,36 +256,26 @@ def add_user(nick, email, password):
             logging.exception(e)
             return False
     except Exception as e:
-        conn.close()
         logging.exception(e)
         return False
 
-    conn.commit()
-    conn.close()
     return True
 
 
-#TODO test this
-def get_user_id(nick, hashed_pass):
+def get_user_id(db, nick, hashed_pass):
     '''Returns the matching user's ID, else None
     If an unexpected exception is caught False will be returned
     The password passed as argument must be already hashed
     '''
 
-    conn = sqlite3.connect(const.DB_FILENAME)
-    db = conn.cursor()
-
     try:
         db.execute('SELECT id FROM user WHERE nick=? AND password=?',
                 (nick, hashed_pass))
     except Exception as e:
-        conn.close()
         logging.exception(e)
         return False
 
     rv = db.fetchone()
-
-    conn.close()
 
     if rv is None:
         return None
@@ -280,26 +283,19 @@ def get_user_id(nick, hashed_pass):
     return int(rv[0])
 
 
-#TODO test this (check if close was called, etc
-def get_nick_by_id(uid):
+def get_nick_by_id(db, uid):
     '''Get's the user's nickname by his id
     If the user doesn't exists None will be returned
     In case of errors False will be returned
     '''
 
-    conn = sqlite3.connect(const.DB_FILENAME)
-    db = conn.cursor()
-
     try:
         db.execute('SELECT nick FROM user WHERE id=?', (uid,))
     except Exception as e:
-        conn.close()
         logging.exception(e)
         return False
 
     rv = db.fetchone()
-
-    conn.close()
 
     if rv is None:
         return None
