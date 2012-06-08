@@ -12,6 +12,7 @@ Things learned in this project (random order)
 * mock - mocking objects and monkey patching for isolation tests
 * SQLite3 database
 * flask-KVSession for managing the sessions on server side
+* a little bit of JS for the dynamically adding upload fields
 
 Note: this application is almost the same as bottle-upload, just the framework
 differs
