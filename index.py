@@ -61,7 +61,7 @@ def register():
                     result = add_user(db, nick, email, password)
 
                     if result is True:
-                        db.commit()
+                        conn.commit()
                         message = const.R_SUCCESS
                         logging.info(
                                 '{0}({1}) has registered'.format(nick, email))
