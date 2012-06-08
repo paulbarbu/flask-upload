@@ -153,25 +153,28 @@ def upload():
         conn = sqlite3.connect(const.DB_FILENAME)
         db = conn.cursor()
 
-        f = request.files['file_data']
-        filename = secure_filename(f.filename)
+        f = request.files.getlist('file_data')
 
         if f:
-            if filename:
-                upload_dir = os.path.join(os.getcwd(), const.UPLOAD_PATH,
-                    get_nick_by_id(db, session['uid']))
+            for user_file in f[:-1]: #the getlist method returns a list with the
+                                     #last entry empty, we discard that
+                filename = secure_filename(user_file.filename)
+                if filename:
+                    upload_dir = os.path.join(os.getcwd(), const.UPLOAD_PATH,
+                        get_nick_by_id(db, session['uid']))
 
-                if not os.path.isdir(upload_dir):
-                    #TODO: check write permissions
-                    os.makedirs(upload_dir)
+                    if not os.path.isdir(upload_dir):
+                        #TODO: check write permissions
+                        os.makedirs(upload_dir)
 
-                #TODO: here write permissions should be checked too
-                f.save(os.path.join(upload_dir, filename))
+                    #TODO: here write permissions should be checked too
+                    user_file.save(os.path.join(upload_dir, filename))
 
-                #TODO: add the upload to the database
-                message = const.U_SUCCESS
-            else:
-                error = err.INVALID_FILENAME
+                    #TODO: add the upload to the database
+                    message = const.U_SUCCESS
+                else:
+                    error = err.INVALID_FILENAME
+                    break
         else:
             error = err.NO_FILE
 
